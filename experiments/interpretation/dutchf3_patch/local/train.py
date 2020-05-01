@@ -27,8 +27,8 @@ from ignite.engine import Events
 from ignite.metrics import Loss
 from ignite.utils import convert_tensor
 
-from cv_lib.event_handlers import SnapshotHandler, logging_handlers, tensorboard_handlers
-from cv_lib.event_handlers.tensorboard_handlers import create_summary_writer, log_results
+from cv_lib.event_handlers import SnapshotHandler, tensorboard_handlers, logging_handlers
+from cv_lib.event_handlers.logging_handlers import log_training_output, log_lr
 from cv_lib.segmentation import extract_metric_from, models
 from cv_lib.segmentation.dutchf3.engine import create_supervised_evaluator, create_supervised_trainer
 from cv_lib.segmentation.dutchf3.utils import current_datetime, generate_path, git_branch, git_hash
@@ -169,7 +169,7 @@ def run(*options, cfg=None, debug=False):
     )
 
     # Tensorboard writer:
-    summary_writer = create_summary_writer(log_dir=path.join(output_dir, "logs"))
+    summary_writer = tensorboard_handlers.create_summary_writer(log_dir=path.join(output_dir, "logs"))
 
     # class weights are inversely proportional to the frequency of the classes in the training set
     class_weights = torch.tensor(config.DATASET.CLASS_WEIGHTS, device=device, requires_grad=False)
@@ -197,22 +197,9 @@ def run(*options, cfg=None, debug=False):
 
     # Logging:
     trainer.add_event_handler(
-        Events.ITERATION_COMPLETED, logging_handlers.log_training_output(log_interval=config.TRAIN.BATCH_SIZE_PER_GPU),
+        Events.ITERATION_COMPLETED, log_training_output(log_interval=config.TRAIN.BATCH_SIZE_PER_GPU),
     )
-    trainer.add_event_handler(Events.EPOCH_COMPLETED, logging_handlers.log_lr(optimizer))
-
-    evaluator.add_event_handler(
-        Events.EPOCH_COMPLETED,
-        logging_handlers.log_metrics(
-            "Validation results",
-            metrics_dict={
-                "nll": "Avg loss :",
-                "pixacc": "Pixelwise Accuracy :",
-                "mca": "Avg Class Accuracy :",
-                "mIoU": "Avg Class IoU :",
-            },
-        ),
-    )
+    trainer.add_event_handler(Events.EPOCH_COMPLETED, log_lr(optimizer))
 
     # Tensorboard and Logging:
     trainer.add_event_handler(Events.ITERATION_COMPLETED, tensorboard_handlers.log_training_output(summary_writer))
@@ -221,12 +208,14 @@ def run(*options, cfg=None, debug=False):
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_training_results(engine):
         evaluator.run(train_loader)
-        log_results(engine, evaluator, summary_writer, n_classes, stage="Training")
+        tensorboard_handlers.log_results(engine, evaluator, summary_writer, n_classes, stage="Training")
+        logging_handlers.log_metrics(engine, evaluator, stage="Training")
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_validation_results(engine):
         evaluator.run(val_loader)
-        log_results(engine, evaluator, summary_writer, n_classes, stage="Validation")
+        tensorboard_handlers.log_results(engine, evaluator, summary_writer, n_classes, stage="Validation")
+        logging_handlers.log_metrics(engine, evaluator, stage="Validation")
 
     # Checkpointing:
     checkpoint_handler = SnapshotHandler(

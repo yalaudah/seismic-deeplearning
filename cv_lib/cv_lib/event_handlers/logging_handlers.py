@@ -26,11 +26,13 @@ def log_lr(optimizer, engine):
 
 
 @curry
-def log_metrics(log_msg, engine, metrics_dict={"pixacc": "Avg accuracy :", "nll": "Avg loss :"}):
+def log_metrics(engine, evaluator, stage):
+    metrics_dict = {"pixacc": "Avg accuracy :", "nll": "Avg loss :"}
     logger = logging.getLogger(__name__)
-    metrics = engine.state.metrics
+    # metrics = engine.state.metrics
+    metrics = evaluator.state.metrics
     metrics_msg = " ".join([f"{metrics_dict[k]} {metrics[k]:.2f}" for k in metrics_dict])
-    logger.info(f"{log_msg} - Epoch {engine.state.epoch} [{engine.state.max_epochs}] " + metrics_msg)
+    logger.info(f"{stage} - Epoch {engine.state.epoch} [{engine.state.max_epochs}] " + metrics_msg)
 
 
 @curry
